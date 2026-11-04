@@ -162,6 +162,12 @@ def logo_url_for(posted_company: dict) -> str:
     )
 
 
+# Telegram's real hard limit for a photo caption is 1024 characters, measured in
+# UTF-16 code units (emoji count as 2). We render in plain Python chars, so we
+# stay well under 1024 as a safety margin to absorb that difference.
+CAPTION_HARD_LIMIT = 900
+
+
 def build_caption(job: dict, detail: dict, header: str, footer_tags: str, extra_line: str) -> str:
     title = job.get("title", "")
     company = (job.get("postedCompany") or {}).get("name", "")
@@ -176,23 +182,32 @@ def build_caption(job: dict, detail: dict, header: str, footer_tags: str, extra_
     job_url = (job.get("metadata") or {}).get("jobDetailsUrl", "")
 
     clean = clean_description(detail.get("description", ""))
-    blurb = truncate_at_sentence(clean)
     skills_line = build_skills_line(job.get("skills"))
 
-    return (
-        f"{header}\n\n"
-        f"\U0001f4bc <b>{esc(title)}</b>\n\n"
-        f"\U0001f3e2 <b>Company:</b> {esc(company)}\n"
-        f"\U0001f4cd Singapore\n"
-        f"\U0001f4bc <b>Employment:</b> {esc(employment)}\n"
-        f"⭐ <b>Level:</b> {esc(level)}\n"
-        f"\U0001f4b0 <b>Salary:</b> ${esc(salary_min)} - ${esc(salary_max)} / {esc(salary_type)}\n\n"
-        f"\U0001f4dd <b>About the role:</b>\n{esc(blurb)}\n\n"
-        f"{extra_line}\n\n"
-        f"\U0001f6e0 <b>Skills:</b> {skills_line}\n\n"
-        f'\U0001f517 <a href="{esc(job_url)}">Apply here</a>\n\n'
-        f"{footer_tags}"
-    )
+    def render(blurb_text: str) -> str:
+        return (
+            f"{header}\n\n"
+            f"\U0001f4bc <b>{esc(title)}</b>\n\n"
+            f"\U0001f3e2 <b>Company:</b> {esc(company)}\n"
+            f"\U0001f4cd Singapore\n"
+            f"\U0001f4bc <b>Employment:</b> {esc(employment)}\n"
+            f"⭐ <b>Level:</b> {esc(level)}\n"
+            f"\U0001f4b0 <b>Salary:</b> ${esc(salary_min)} - ${esc(salary_max)} / {esc(salary_type)}\n\n"
+            f"\U0001f4dd <b>About the role:</b>\n{esc(blurb_text)}\n\n"
+            f"{extra_line}\n\n"
+            f"\U0001f6e0 <b>Skills:</b> {skills_line}\n\n"
+            f'\U0001f517 <a href="{esc(job_url)}">Apply here</a>\n\n'
+            f"{footer_tags}"
+        )
+
+    # Shrink the blurb until the whole caption fits, rather than guessing a
+    # fixed budget - title/company/skills length varies job to job.
+    for limit in (600, 450, 300, 180, 100, 50, 0):
+        blurb = truncate_at_sentence(clean, limit=limit) if limit else ""
+        caption = render(blurb)
+        if len(caption) <= CAPTION_HARD_LIMIT:
+            return caption
+    return render("")  # last-resort fallback; should never actually hit this
 
 
 def run_main_pick(state: dict, today: str) -> bool:
