@@ -1,4 +1,12 @@
 {
-  "posted": {},
-  "daily_lock": {}
+  "posted": {
+    "https://www.mycareersfuture.gov.sg/job/information-technology/risk-adversary-intelligence-discovery-security-engineer-graduate-2027-start-tiktok-575b3bd0a737f5615387f3e1a116c6d1": {
+      "title": "Risk Adversary and Intelligence Discovery Security Engineer - Graduate (TikTok BRIC) - 2027 Start",
+      "type": "main",
+      "date": "2026-11-04"
+    }
+  },
+  "daily_lock": {
+    "main": "2026-11-04"
+  }
 }
