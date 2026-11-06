@@ -145,6 +145,80 @@ def mcf_job_detail(job_details_url: str) -> dict:
     return resp.json()
 
 
+NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+_NUM = r"(\d+|" + "|".join(NUMBER_WORDS) + r")"
+
+
+def _num(token: str) -> int:
+    return NUMBER_WORDS.get(token.lower(), None) or int(token)
+
+
+# Team size is the one eligibility-adjacent fact worth best-effort extracting:
+# it's usually a single simple number (unlike age/fee, which we saw can even
+# contradict itself across sections on the same page - see the age mismatch
+# caught during testing). Patterns are ordered most-specific first; if none
+# match, we say nothing rather than guess.
+TEAM_SIZE_PATTERNS = [
+    re.compile(rf"team\s*(?:size|required)?\s*[:\-]?\s*{_NUM}\s*(?:to|-|–)\s*{_NUM}\s*members?", re.I),
+    re.compile(rf"(?:alone|solo|individually|independently)\s+or\s+(?:in\s+)?(?:a\s+)?team\s+of\s+up\s+to\s+{_NUM}", re.I),
+    re.compile(rf"team\s+of\s+up\s+to\s+{_NUM}", re.I),
+    re.compile(rf"(?:up to|maximum(?: team size of)?)\s*{_NUM}\s*members?", re.I),
+    re.compile(rf"teams?\s+of\s+(?:up to\s+)?{_NUM}\b", re.I),
+]
+SOLO_ALLOWED_RE = re.compile(r"\b(?:alone|solo|individually|independently)\b.{0,40}\bteam\b", re.I)
+TEAM_REQUIRED_RE = re.compile(r"\bteam\s+(?:is\s+)?required\b", re.I)
+
+
+def fetch_page_text(url: str) -> str:
+    resp = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0 (compatible; sgtechjob-bot)"})
+    resp.raise_for_status()
+    text = resp.text
+    for pattern, repl in CLEAN_STEPS:
+        text = pattern.sub(repl, text)
+    for entity, repl in ENTITY_MAP.items():
+        text = text.replace(entity, repl)
+    return re.sub(r"\s+", " ", text)
+
+
+def extract_team_size(hackathon_url: str) -> str | None:
+    """Best-effort team-size line from the hackathon's own overview page.
+
+    Searches the whole page rather than one heading, since the same fact
+    shows up under different section names on different events ("Who can
+    participate" on one, "Who this is for" on another). Returns None -
+    never a guess - if nothing confidently matches, so the caption just
+    falls back to the rules link instead of showing something wrong.
+    """
+    if not hackathon_url:
+        return None
+    try:
+        text = fetch_page_text(hackathon_url)
+    except requests.RequestException as e:
+        print(f"hackathon: team-size fetch failed for {hackathon_url}: {e}")
+        return None
+
+    window = text[:6000]  # overview page content is near the top; bounds the regex cost
+
+    for pattern in TEAM_SIZE_PATTERNS:
+        m = pattern.search(window)
+        if m:
+            nums = [_num(g) for g in m.groups() if g]
+            if len(nums) == 2:
+                return f"{nums[0]}–{nums[1]} members"
+            if len(nums) == 1:
+                return f"up to {nums[0]} members"
+
+    if TEAM_REQUIRED_RE.search(window):
+        return "Team required (see rules for size)"
+    if SOLO_ALLOWED_RE.search(window):
+        return "Solo or team"
+
+    return None
+
+
 def devpost_search(challenge_type="online", status="open") -> list:
     """Query Devpost's public hackathons API (no key needed)."""
     params = {
@@ -397,7 +471,7 @@ def hackathon_photo_url(hackathon: dict) -> str:
     return logo_url_for({"name": hackathon.get("organization_name") or hackathon.get("title", "Hackathon")})
 
 
-def build_hackathon_caption(hackathon: dict) -> str:
+def build_hackathon_caption(hackathon: dict, team_size: str | None = None) -> str:
     title = hackathon.get("title", "")
     org = hackathon.get("organization_name", "")
     location = (hackathon.get("displayed_location") or {}).get("location", "Online")
@@ -409,11 +483,15 @@ def build_hackathon_caption(hackathon: dict) -> str:
     url = hackathon.get("url", "")
     rules_url = f"{url.rstrip('/')}/rules" if url else ""
 
-    # Team size, exact eligibility and registration fee aren't in Devpost's
-    # structured API - only in each organizer's own freeform rules page, which
-    # varies in wording/structure hackathon to hackathon. Rather than guess
-    # and risk posting something wrong (e.g. "free" when a later round charges
-    # a fee), link straight to the rules page for those specifics.
+    # Team size is best-effort extracted from the organizer's own page (see
+    # extract_team_size) and only shown when confidently found; otherwise this
+    # line is simply skipped. Exact eligibility and registration fee are
+    # deliberately NOT auto-extracted - testing turned up a hackathon whose
+    # own page contradicted itself on age eligibility across two sections, so
+    # guessing at those risks posting something actively wrong. The rules
+    # link covers them instead.
+    team_line = f"\U0001f465 <b>Team:</b> {esc(team_size)}\n" if team_size else ""
+
     return (
         f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
         f"\U0001f4bb <b>{esc(title)}</b>\n\n"
@@ -421,8 +499,9 @@ def build_hackathon_caption(hackathon: dict) -> str:
         f"\U0001f3e2 <b>Organizer:</b> {esc(org)}\n"
         f"\U0001f4cd {esc(location)}\n"
         f"\U0001f4c5 <b>Submissions:</b> {esc(dates)} ({esc(time_left)})\n"
+        f"{team_line}"
         f"\U0001f4b0 <b>Prize pool:</b> {esc(prize)}\n\n"
-        f'\U0001f4cb <a href="{esc(rules_url)}">Team size, eligibility &amp; fees (full rules)</a>\n'
+        f'\U0001f4cb <a href="{esc(rules_url)}">Full rules (eligibility &amp; fees)</a>\n'
         f'\U0001f517 <a href="{esc(url)}">Join on Devpost</a>\n\n'
         f"#SGTechJobs #Hackathon #StudentFriendly\n"
         f"{CHANNEL_PROMO_LINE}"
@@ -449,7 +528,8 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if not url or key in state["posted"]:
             continue
 
-        caption = build_hackathon_caption(h)
+        team_size = extract_team_size(url)
+        caption = build_hackathon_caption(h, team_size=team_size)
         send_telegram_photo(hackathon_photo_url(h), caption)
 
         state["posted"][key] = {"title": h.get("title", ""), "type": "hackathon", "date": today}
