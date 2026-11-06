@@ -29,6 +29,23 @@ MCF_SEARCH_URL = "https://api.mycareersfuture.gov.sg/v2/search"
 MCF_JOB_URL = "https://api.mycareersfuture.gov.sg/v2/jobs/{job_id}"
 
 DEVPOST_SEARCH_URL = "https://devpost.com/api/hackathons"
+FX_API_URL = "https://api.frankfurter.dev/v1/latest"
+
+# Devpost's prize_amount field prefixes the number with either a currency
+# symbol or a 3-letter ISO code, inconsistently. Map the symbols we actually
+# see in practice to ISO codes so we can look up a live rate. "$" alone is
+# ambiguous (Devpost is US-based) so it defaults to USD.
+CURRENCY_SYMBOL_MAP = {
+    "$": "USD",
+    "₹": "INR",
+    "€": "EUR",
+    "£": "GBP",
+    "¥": "JPY",
+    "₩": "KRW",
+    "C$": "CAD",
+    "A$": "AUD",
+    "S$": "SGD",
+}
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "@sgtechjob")
@@ -299,11 +316,78 @@ def run_intern_pick(state: dict, today: str) -> bool:
     return False
 
 
-def strip_currency_span(raw: str) -> str:
-    """Devpost wraps the number in prize_amount with a <span>; keep just the text."""
+PRIZE_AMOUNT_RE = re.compile(
+    r"^\s*(?P<currency>[A-Z]{3}|\$|₹|€|£|¥|₩|C\$|A\$|S\$)\s*"
+    r"<span[^>]*>(?P<number>[\d,]+(?:\.\d+)?)</span>",
+)
+
+
+def parse_prize_amount(raw: str) -> tuple:
+    """Pulls (currency_code, numeric_value) out of Devpost's prize_amount HTML snippet.
+
+    Returns (None, None) if it can't confidently parse the value (no prize
+    listed, or an unrecognized format) - callers should fall back gracefully.
+    """
     if not raw:
+        return None, None
+    match = PRIZE_AMOUNT_RE.match(raw.strip())
+    if not match:
+        return None, None
+    currency = match.group("currency")
+    code = currency if len(currency) == 3 and currency.isalpha() else CURRENCY_SYMBOL_MAP.get(currency)
+    try:
+        number = float(match.group("number").replace(",", ""))
+    except ValueError:
+        return None, None
+    return code, number
+
+
+def convert_to_sgd(code: str, amount: float) -> float | None:
+    """Live FX lookup via frankfurter.dev (free, no key). Returns None on any failure."""
+    if code == "SGD":
+        return amount
+    try:
+        resp = requests.get(FX_API_URL, params={"from": code, "to": "SGD"}, timeout=TIMEOUT)
+        resp.raise_for_status()
+        rate = resp.json().get("rates", {}).get("SGD")
+        if rate is None:
+            return None
+        return amount * rate
+    except (requests.RequestException, ValueError, TypeError):
+        return None
+
+
+def format_prize_sgd(raw: str) -> str:
+    """Converts Devpost's prize_amount field to a clean 'SGD X,XXX' string.
+
+    Falls back to showing the original currency if conversion fails for any
+    reason (unknown code, FX API down, zero/no prize listed), so the post
+    never breaks or shows a blank field.
+    """
+    code, amount = parse_prize_amount(raw)
+    if code is None:
         return "See event page"
-    return re.sub(r"<[^>]+>", "", raw).strip()
+    if amount == 0:
+        return "Non-cash / to be announced"
+    sgd_amount = convert_to_sgd(code, amount)
+    if sgd_amount is None:
+        # Couldn't get a live rate - show the original currency rather than guessing.
+        return f"{code} {amount:,.0f} (SGD conversion unavailable)"
+    return f"SGD {sgd_amount:,.0f}"
+
+
+PLACEHOLDER_THUMBNAIL_MARKERS = ("thumbnail-placeholder", "/assets/defaults/")
+
+
+def hackathon_photo_url(hackathon: dict) -> str:
+    """Devpost's own thumbnail, or a generated avatar if it's just their generic placeholder."""
+    thumb = hackathon.get("thumbnail_url") or ""
+    if thumb and not any(marker in thumb for marker in PLACEHOLDER_THUMBNAIL_MARKERS):
+        # Devpost serves some image URLs as protocol-relative ("//..."); Telegram needs a scheme.
+        if thumb.startswith("//"):
+            thumb = f"https:{thumb}"
+        return thumb
+    return logo_url_for({"name": hackathon.get("organization_name") or hackathon.get("title", "Hackathon")})
 
 
 def build_hackathon_caption(hackathon: dict) -> str:
@@ -312,7 +396,7 @@ def build_hackathon_caption(hackathon: dict) -> str:
     location = (hackathon.get("displayed_location") or {}).get("location", "Online")
     dates = hackathon.get("submission_period_dates", "")
     time_left = hackathon.get("time_left_to_submission", "")
-    prize = strip_currency_span(hackathon.get("prize_amount", ""))
+    prize = format_prize_sgd(hackathon.get("prize_amount", ""))
     themes = ", ".join(esc(t.get("name")) for t in (hackathon.get("themes") or [])[:3]) or "Open theme"
     url = hackathon.get("url", "")
 
@@ -350,7 +434,7 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
             continue
 
         caption = build_hackathon_caption(h)
-        send_telegram_photo(h.get("thumbnail_url") or logo_url_for({"name": h.get("organization_name", "Hackathon")}), caption)
+        send_telegram_photo(hackathon_photo_url(h), caption)
 
         state["posted"][key] = {"title": h.get("title", ""), "type": "hackathon", "date": today}
         state["daily_lock"]["hackathon"] = today
