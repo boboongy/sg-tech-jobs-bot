@@ -51,6 +51,12 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "@sgtechjob")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
 
+# Baked into every caption so the channel survives being screenshotted or
+# copy-pasted into a group chat, not just forwarded (forwards carry their own
+# "Forwarded from" attribution automatically; copies and screenshots don't).
+CHANNEL_HANDLE = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID.startswith("@") else "@sgtechjob"
+CHANNEL_PROMO_LINE = f"\U0001f4e2 More SG tech jobs, hackathons &amp; events: t.me/{CHANNEL_HANDLE.lstrip('@')}"
+
 TIMEOUT = 40
 BLURB_LIMIT = 650  # keeps full caption safely under Telegram's 1024-char photo caption limit
 
@@ -228,7 +234,8 @@ def build_caption(job: dict, detail: dict, header: str, footer_tags: str, extra_
             f"{extra_line}\n\n"
             f"\U0001f6e0 <b>Skills:</b> {skills_line}\n\n"
             f'\U0001f517 <a href="{esc(job_url)}">Apply here</a>\n\n'
-            f"{footer_tags}"
+            f"{footer_tags}\n"
+            f"{CHANNEL_PROMO_LINE}"
         )
 
     # Shrink the blurb until the whole caption fits, rather than guessing a
@@ -409,7 +416,8 @@ def build_hackathon_caption(hackathon: dict) -> str:
         f"\U0001f3f7 <b>Themes:</b> {themes}\n"
         f"\U0001f4b0 <b>Prize pool:</b> {esc(prize)}\n\n"
         f'\U0001f517 <a href="{esc(url)}">Join on Devpost</a>\n\n'
-        f"#SGTechJobs #Hackathon #StudentFriendly"
+        f"#SGTechJobs #Hackathon #StudentFriendly\n"
+        f"{CHANNEL_PROMO_LINE}"
     )
 
 
