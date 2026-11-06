@@ -14,9 +14,15 @@
       "title": "Junior Software Developer",
       "type": "main",
       "date": "2026-11-06"
+    },
+    "hackathon:https://inceptrix-hackathon.devpost.com/": {
+      "title": "Inceptrix 3.0",
+      "type": "hackathon",
+      "date": "2026-11-06"
     }
   },
   "daily_lock": {
-    "main": "2026-11-06"
+    "main": "2026-11-06",
+    "hackathon": "2026-11-06"
   }
 }
