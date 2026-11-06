@@ -28,6 +28,8 @@ STATE_PATH = REPO_ROOT / "data" / "state.json"
 MCF_SEARCH_URL = "https://api.mycareersfuture.gov.sg/v2/search"
 MCF_JOB_URL = "https://api.mycareersfuture.gov.sg/v2/jobs/{job_id}"
 
+DEVPOST_SEARCH_URL = "https://devpost.com/api/hackathons"
+
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "@sgtechjob")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -118,6 +120,18 @@ def mcf_job_detail(job_details_url: str) -> dict:
     resp = requests.get(MCF_JOB_URL.format(job_id=job_id), timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json()
+
+
+def devpost_search(challenge_type="online", status="open") -> list:
+    """Query Devpost's public hackathons API (no key needed)."""
+    params = {
+        "order_by": "recently-added",
+        "status[]": status,
+        "challenge_type[]": challenge_type,
+    }
+    resp = requests.get(DEVPOST_SEARCH_URL, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.json().get("hackathons", [])
 
 
 def esc(value) -> str:
@@ -285,6 +299,68 @@ def run_intern_pick(state: dict, today: str) -> bool:
     return False
 
 
+def strip_currency_span(raw: str) -> str:
+    """Devpost wraps the number in prize_amount with a <span>; keep just the text."""
+    if not raw:
+        return "See event page"
+    return re.sub(r"<[^>]+>", "", raw).strip()
+
+
+def build_hackathon_caption(hackathon: dict) -> str:
+    title = hackathon.get("title", "")
+    org = hackathon.get("organization_name", "")
+    location = (hackathon.get("displayed_location") or {}).get("location", "Online")
+    dates = hackathon.get("submission_period_dates", "")
+    time_left = hackathon.get("time_left_to_submission", "")
+    prize = strip_currency_span(hackathon.get("prize_amount", ""))
+    themes = ", ".join(esc(t.get("name")) for t in (hackathon.get("themes") or [])[:3]) or "Open theme"
+    url = hackathon.get("url", "")
+
+    return (
+        f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
+        f"\U0001f4bb <b>{esc(title)}</b>\n\n"
+        f"\U0001f3e2 <b>Organizer:</b> {esc(org)}\n"
+        f"\U0001f4cd {esc(location)}\n"
+        f"\U0001f4c5 <b>Submissions:</b> {esc(dates)} ({esc(time_left)})\n"
+        f"\U0001f3f7 <b>Themes:</b> {themes}\n"
+        f"\U0001f4b0 <b>Prize pool:</b> {esc(prize)}\n\n"
+        f'\U0001f517 <a href="{esc(url)}">Join on Devpost</a>\n\n'
+        f"#SGTechJobs #Hackathon #StudentFriendly"
+    )
+
+
+def run_hackathon_pick(state: dict, today: str) -> bool:
+    """Fallback pick: only runs when no job/internship posted today, so volume stays ~1/day."""
+    if state["daily_lock"].get("hackathon") == today:
+        print("hackathon: already posted today, skipping")
+        return False
+
+    try:
+        results = devpost_search(challenge_type="online", status="open")
+    except requests.RequestException as e:
+        print(f"hackathon: failed to fetch Devpost listings: {e}")
+        return False
+
+    for h in results:
+        if h.get("invite_only"):
+            continue
+        url = h.get("url", "")
+        key = f"hackathon:{url}"
+        if not url or key in state["posted"]:
+            continue
+
+        caption = build_hackathon_caption(h)
+        send_telegram_photo(h.get("thumbnail_url") or logo_url_for({"name": h.get("organization_name", "Hackathon")}), caption)
+
+        state["posted"][key] = {"title": h.get("title", ""), "type": "hackathon", "date": today}
+        state["daily_lock"]["hackathon"] = today
+        print(f"hackathon: posted '{h.get('title')}'")
+        return True
+
+    print("hackathon: no open online hackathon found today")
+    return False
+
+
 def main() -> int:
     today = date.today().isoformat()
     state = load_state()
@@ -292,9 +368,16 @@ def main() -> int:
     posted_main = run_main_pick(state, today)
     posted_intern = run_intern_pick(state, today)
 
+    # Hackathons are a fallback, not a 3rd guaranteed daily post - this keeps
+    # the channel at ~1-2 posts/day instead of flooding it, while still never
+    # going silent on a day the job scrapers come up empty.
+    posted_hackathon = False
+    if not posted_main and not posted_intern:
+        posted_hackathon = run_hackathon_pick(state, today)
+
     save_state(state)
 
-    if not posted_main and not posted_intern:
+    if not posted_main and not posted_intern and not posted_hackathon:
         print("Nothing new to post today.")
     return 0
 
