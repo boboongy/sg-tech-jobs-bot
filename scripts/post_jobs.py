@@ -404,17 +404,25 @@ def build_hackathon_caption(hackathon: dict) -> str:
     dates = hackathon.get("submission_period_dates", "")
     time_left = hackathon.get("time_left_to_submission", "")
     prize = format_prize_sgd(hackathon.get("prize_amount", ""))
-    themes = ", ".join(esc(t.get("name")) for t in (hackathon.get("themes") or [])[:3]) or "Open theme"
+    theme_names = [t.get("name") for t in (hackathon.get("themes") or []) if t.get("name")]
+    themes = ", ".join(esc(t) for t in theme_names[:3]) or "Open theme"
     url = hackathon.get("url", "")
+    rules_url = f"{url.rstrip('/')}/rules" if url else ""
 
+    # Team size, exact eligibility and registration fee aren't in Devpost's
+    # structured API - only in each organizer's own freeform rules page, which
+    # varies in wording/structure hackathon to hackathon. Rather than guess
+    # and risk posting something wrong (e.g. "free" when a later round charges
+    # a fee), link straight to the rules page for those specifics.
     return (
         f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
         f"\U0001f4bb <b>{esc(title)}</b>\n\n"
+        f"\U0001f4a1 <b>Build around:</b> {themes}\n\n"
         f"\U0001f3e2 <b>Organizer:</b> {esc(org)}\n"
         f"\U0001f4cd {esc(location)}\n"
         f"\U0001f4c5 <b>Submissions:</b> {esc(dates)} ({esc(time_left)})\n"
-        f"\U0001f3f7 <b>Themes:</b> {themes}\n"
         f"\U0001f4b0 <b>Prize pool:</b> {esc(prize)}\n\n"
+        f'\U0001f4cb <a href="{esc(rules_url)}">Team size, eligibility &amp; fees (full rules)</a>\n'
         f'\U0001f517 <a href="{esc(url)}">Join on Devpost</a>\n\n'
         f"#SGTechJobs #Hackathon #StudentFriendly\n"
         f"{CHANNEL_PROMO_LINE}"
