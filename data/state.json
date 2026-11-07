@@ -19,10 +19,15 @@
       "title": "Inceptrix 3.0",
       "type": "hackathon",
       "date": "2026-11-06"
+    },
+    "https://www.mycareersfuture.gov.sg/job/information-technology/junior-software-developer-raymond-construction-b5a4cacf4478df8c19c1c49834ce27e0": {
+      "title": "Junior Software Developer",
+      "type": "main",
+      "date": "2026-11-07"
     }
   },
   "daily_lock": {
-    "main": "2026-11-06",
+    "main": "2026-11-07",
     "hackathon": "2026-11-06"
   }
 }
