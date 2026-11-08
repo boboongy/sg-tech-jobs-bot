@@ -24,10 +24,15 @@
       "title": "Junior Software Developer",
       "type": "main",
       "date": "2026-11-07"
+    },
+    "hackathon:https://wqcc-qiskit-fall-fest-2026.devpost.com/": {
+      "title": "WQCC Qiskit Fall Fest 2026",
+      "type": "hackathon",
+      "date": "2026-11-08"
     }
   },
   "daily_lock": {
     "main": "2026-11-07",
-    "hackathon": "2026-11-06"
+    "hackathon": "2026-11-08"
   }
 }
