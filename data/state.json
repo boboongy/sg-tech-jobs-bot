@@ -29,10 +29,15 @@
       "title": "WQCC Qiskit Fall Fest 2026",
       "type": "hackathon",
       "date": "2026-11-08"
+    },
+    "hackathon:https://silicon-valley-buildathon.devpost.com/": {
+      "title": "Silicon Valley Buildathon",
+      "type": "hackathon",
+      "date": "2026-11-09"
     }
   },
   "daily_lock": {
     "main": "2026-11-07",
-    "hackathon": "2026-11-08"
+    "hackathon": "2026-11-09"
   }
 }
