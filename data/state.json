@@ -34,10 +34,15 @@
       "title": "Silicon Valley Buildathon",
       "type": "hackathon",
       "date": "2026-11-09"
+    },
+    "hackathon:https://datajam-2026.devpost.com/": {
+      "title": "DataJam 2026",
+      "type": "hackathon",
+      "date": "2026-11-10"
     }
   },
   "daily_lock": {
     "main": "2026-11-07",
-    "hackathon": "2026-11-09"
+    "hackathon": "2026-11-10"
   }
 }
