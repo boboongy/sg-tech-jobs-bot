@@ -17,7 +17,7 @@ import json
 import os
 import re
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import requests
@@ -29,6 +29,8 @@ MCF_SEARCH_URL = "https://api.mycareersfuture.gov.sg/v2/search"
 MCF_JOB_URL = "https://api.mycareersfuture.gov.sg/v2/jobs/{job_id}"
 
 DEVPOST_SEARCH_URL = "https://devpost.com/api/hackathons"
+LUMA_SG_DISCOVER_URL = "https://luma.com/singapore"
+LUMA_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
 FX_API_URL = "https://api.frankfurter.dev/v1/latest"
 
 # Devpost's prize_amount field prefixes the number with either a currency
@@ -229,6 +231,74 @@ def devpost_search(challenge_type="online", status="open") -> list:
     resp = requests.get(DEVPOST_SEARCH_URL, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json().get("hackathons", [])
+
+
+# Luma has no public search API and its city-discovery page ignores keyword
+# query params (confirmed by testing: ?k=hackathon returns identical results
+# to no filter at all) - so "search" here means fetch the whole SG feed and
+# filter client-side by name. The feed is a general local-events page (socials,
+# meetups, talks), not hackathon-specific, so most days this returns nothing -
+# that's expected and fine, Devpost covers the gap. This is also an unofficial
+# scrape of Luma's embedded page data (not a documented API), so it's built to
+# fail soft: any parsing problem returns an empty list rather than raising.
+NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+
+
+def luma_search_hackathons() -> list:
+    """Best-effort: hackathon-named events from Luma's Singapore discovery feed."""
+    try:
+        resp = requests.get(LUMA_SG_DISCOVER_URL, headers=LUMA_HEADERS, timeout=TIMEOUT)
+        resp.raise_for_status()
+        match = NEXT_DATA_RE.search(resp.text)
+        if not match:
+            print("luma: __NEXT_DATA__ not found on page (layout may have changed)")
+            return []
+        data = json.loads(match.group(1))
+        events = data["props"]["pageProps"]["initialData"]["data"].get("events", [])
+    except (requests.RequestException, KeyError, ValueError, json.JSONDecodeError) as e:
+        print(f"luma: fetch/parse failed, skipping Luma this run: {e}")
+        return []
+
+    return [e["event"] for e in events if "hack" in (e.get("event", {}).get("name") or "").lower()]
+
+
+def format_luma_datetime(start_at: str, timezone_name: str) -> str:
+    """Luma gives UTC ISO timestamps; render in the event's own local timezone."""
+    if not start_at:
+        return ""
+    try:
+        from zoneinfo import ZoneInfo
+
+        dt_utc = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+        dt_local = dt_utc.astimezone(ZoneInfo(timezone_name)) if timezone_name else dt_utc
+        return dt_local.strftime("%b %d, %Y, %I:%M %p").replace(" 0", " ")
+    except Exception:
+        return start_at
+
+
+def build_luma_caption(event: dict) -> str:
+    name = event.get("name", "")
+    slug = event.get("url", "")
+    event_url = f"https://luma.com/{slug}" if slug else ""
+    cover = event.get("cover_url", "")
+    when = format_luma_datetime(event.get("start_at", ""), event.get("timezone", ""))
+    location_type = event.get("location_type", "")
+    geo = event.get("geo_address_info") or {}
+    if location_type == "online":
+        where = "Online"
+    else:
+        where = ", ".join(filter(None, [geo.get("sublocality"), geo.get("city") or "Singapore"])) or "Singapore"
+
+    return (
+        f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
+        f"\U0001f4bb <b>{esc(name)}</b>\n\n"
+        f"\U0001f1f8\U0001f1ec <b>Local SG event</b> (via Luma)\n"
+        f"\U0001f4cd {esc(where)}\n"
+        f"\U0001f4c5 <b>When:</b> {esc(when)}\n\n"
+        f'\U0001f517 <a href="{esc(event_url)}">View &amp; register on Luma</a>\n\n'
+        f"#SGTechJobs #Hackathon #StudentFriendly\n"
+        f"{CHANNEL_PROMO_LINE}"
+    )
 
 
 def esc(value) -> str:
@@ -509,10 +579,34 @@ def build_hackathon_caption(hackathon: dict, team_size: str | None = None) -> st
 
 
 def run_hackathon_pick(state: dict, today: str) -> bool:
-    """Fallback pick: only runs when no job/internship posted today, so volume stays ~1/day."""
+    """Fallback pick: only runs when no job/internship posted today, so volume stays ~1/day.
+
+    Checks Luma's SG feed first for a real local event (better poster, local
+    relevance), falling through to Devpost's broader hackathon database if
+    Luma has nothing hackathon-named today - which is the common case, since
+    Luma's feed is general local events, not hackathon-specific. Either way
+    the slot gets filled, so reliability doesn't depend on Luma having
+    anything.
+    """
     if state["daily_lock"].get("hackathon") == today:
         print("hackathon: already posted today, skipping")
         return False
+
+    for event in luma_search_hackathons():
+        slug = event.get("url", "")
+        key = f"hackathon:luma:{slug}"
+        if not slug or key in state["posted"]:
+            continue
+
+        caption = build_luma_caption(event)
+        send_telegram_photo(event.get("cover_url") or logo_url_for({"name": event.get("name", "Hackathon")}), caption)
+
+        state["posted"][key] = {"title": event.get("name", ""), "type": "hackathon", "source": "luma", "date": today}
+        state["daily_lock"]["hackathon"] = today
+        print(f"hackathon: posted '{event.get('name')}' (via Luma)")
+        return True
+
+    print("hackathon: no local Luma match today, falling back to Devpost")
 
     try:
         results = devpost_search(challenge_type="online", status="open")
@@ -524,7 +618,7 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if h.get("invite_only"):
             continue
         url = h.get("url", "")
-        key = f"hackathon:{url}"
+        key = f"hackathon:{url}"  # unchanged format - keeps matching entries already in state.json
         if not url or key in state["posted"]:
             continue
 
@@ -532,9 +626,9 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         caption = build_hackathon_caption(h, team_size=team_size)
         send_telegram_photo(hackathon_photo_url(h), caption)
 
-        state["posted"][key] = {"title": h.get("title", ""), "type": "hackathon", "date": today}
+        state["posted"][key] = {"title": h.get("title", ""), "type": "hackathon", "source": "devpost", "date": today}
         state["daily_lock"]["hackathon"] = today
-        print(f"hackathon: posted '{h.get('title')}'")
+        print(f"hackathon: posted '{h.get('title')}' (via Devpost)")
         return True
 
     print("hackathon: no open online hackathon found today")
