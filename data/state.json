@@ -39,10 +39,15 @@
       "title": "DataJam 2026",
       "type": "hackathon",
       "date": "2026-11-10"
+    },
+    "https://www.mycareersfuture.gov.sg/job/information-technology/security-intern-one-tech-stop-fa65bd4e2238528247094fe13481adcb": {
+      "title": "IT Security Intern",
+      "type": "main",
+      "date": "2026-11-11"
     }
   },
   "daily_lock": {
-    "main": "2026-11-07",
+    "main": "2026-11-11",
     "hackathon": "2026-11-10"
   }
 }
