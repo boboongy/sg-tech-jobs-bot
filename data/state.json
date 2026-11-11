@@ -44,10 +44,16 @@
       "title": "IT Security Intern",
       "type": "main",
       "date": "2026-11-11"
+    },
+    "hackathon:https://hackathon-girls-who-code.devpost.com/": {
+      "title": "InnovateHER Hackathon: Girls Who Code",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-11"
     }
   },
   "daily_lock": {
     "main": "2026-11-11",
-    "hackathon": "2026-11-10"
+    "hackathon": "2026-11-11"
   }
 }
