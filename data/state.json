@@ -50,10 +50,15 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-11"
+    },
+    "https://www.mycareersfuture.gov.sg/job/information-technology/clouddevops-engineer-red-alpha-cybersecurity-e466874b39db8642a76b8e497deaf697": {
+      "title": "Cloud/Devops Engineer (Full-Time Role with Sponsored Training)",
+      "type": "main",
+      "date": "2026-11-12"
     }
   },
   "daily_lock": {
-    "main": "2026-11-11",
+    "main": "2026-11-12",
     "hackathon": "2026-11-11"
   }
 }
