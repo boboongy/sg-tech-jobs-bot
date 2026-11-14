@@ -60,10 +60,16 @@
       "title": "Business Development Executive [Technology Recruitment | Basic plus Commissions]",
       "type": "main",
       "date": "2026-11-13"
+    },
+    "hackathon:https://relate.devpost.com/": {
+      "title": "Relate by Neo4j Hackathon",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-14"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-11"
+    "hackathon": "2026-11-14"
   }
 }
