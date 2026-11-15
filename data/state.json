@@ -66,10 +66,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-14"
+    },
+    "hackathon:https://teens-in-ai.devpost.com/": {
+      "title": "Teens in AI Global Challenge 2027",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-15"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-14"
+    "hackathon": "2026-11-15"
   }
 }
