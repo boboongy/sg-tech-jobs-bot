@@ -2,14 +2,12 @@
 """
 SG Tech Jobs daily poster.
 
-Pulls IT job listings from MyCareersFuture (MCF), picks:
-  1. "main"   - one zero-experience-required job for Junior Executive / Non-executive levels
-  2. "intern" - one internship-titled job (any level)
-
-and posts each (if found and not already posted today) to the
-@sgtechjob Telegram channel. State (dedup + daily lock) is kept in
-data/state.json, which the GitHub Actions workflow commits back after
-each run so the bot never double-posts.
+Pulls IT internship listings from MyCareersFuture (MCF), detected by
+title, and posts one per day (if found and not already posted today) to
+the @sgtechjob Telegram channel. If no internship is found, falls back
+to posting a hackathon so the channel doesn't go silent. State (dedup +
+daily lock) is kept in data/state.json, which the GitHub Actions workflow
+commits back after each run so the bot never double-posts.
 """
 
 import html
@@ -392,43 +390,6 @@ def build_caption(job: dict, detail: dict, header: str, footer_tags: str, extra_
     return render("")  # last-resort fallback; should never actually hit this
 
 
-def run_main_pick(state: dict, today: str) -> bool:
-    """Zero-experience-required pick for students/fresh grads. Returns True if posted."""
-    if state["daily_lock"].get("main") == today:
-        print("main: already posted today, skipping")
-        return False
-
-    results = mcf_search(position_levels=["Junior Executive", "Non-executive"])
-    for job in results:
-        job_url = (job.get("metadata") or {}).get("jobDetailsUrl", "")
-        if not job_url or job_url in state["posted"]:
-            continue
-        try:
-            detail = mcf_job_detail(job_url)
-        except requests.RequestException as e:
-            print(f"main: failed to fetch detail for {job_url}: {e}")
-            continue
-        if detail.get("minimumYearsExperience") != 0:
-            continue
-
-        caption = build_caption(
-            job,
-            detail,
-            header="\U0001f31f <b>TODAY'S TOP PICK</b> \U0001f31f",
-            footer_tags="#SGTechJobs #DailyPick #StudentFriendly",
-            extra_line="✅ No prior experience required — perfect for students and fresh grads!",
-        )
-        send_telegram_photo(logo_url_for(job.get("postedCompany")), caption)
-
-        state["posted"][job_url] = {"title": job.get("title", ""), "type": "main", "date": today}
-        state["daily_lock"]["main"] = today
-        print(f"main: posted '{job.get('title')}'")
-        return True
-
-    print("main: no qualifying zero-experience job found today")
-    return False
-
-
 def run_intern_pick(state: dict, today: str) -> bool:
     """Internship pick, detected by title. Returns True if posted."""
     if state["daily_lock"].get("intern") == today:
@@ -639,19 +600,17 @@ def main() -> int:
     today = date.today().isoformat()
     state = load_state()
 
-    posted_main = run_main_pick(state, today)
     posted_intern = run_intern_pick(state, today)
 
-    # Hackathons are a fallback, not a 3rd guaranteed daily post - this keeps
-    # the channel at ~1-2 posts/day instead of flooding it, while still never
-    # going silent on a day the job scrapers come up empty.
+    # Hackathon is a fallback, not a guaranteed 2nd daily post - keeps the
+    # channel alive on a day with no new internship, without flooding it.
     posted_hackathon = False
-    if not posted_main and not posted_intern:
+    if not posted_intern:
         posted_hackathon = run_hackathon_pick(state, today)
 
     save_state(state)
 
-    if not posted_main and not posted_intern and not posted_hackathon:
+    if not posted_intern and not posted_hackathon:
         print("Nothing new to post today.")
     return 0
 

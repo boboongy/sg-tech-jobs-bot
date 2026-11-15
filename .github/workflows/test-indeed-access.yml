@@ -1,0 +1,18 @@
+name: Test Indeed Access (temporary diagnostic)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Try reaching Indeed SG
+        run: |
+          curl -sS -D - -o /tmp/body.html -w "\nHTTP_STATUS:%{http_code}\n" \
+            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36" \
+            "https://sg.indeed.com/jobs?q=intern&l=Singapore" || true
+          echo "--- body size ---"
+          wc -c /tmp/body.html
+          echo "--- first 1500 chars ---"
+          head -c 1500 /tmp/body.html
