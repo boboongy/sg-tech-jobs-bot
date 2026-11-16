@@ -72,10 +72,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-15"
+    },
+    "hackathon:https://unihacks-youth.devpost.com/": {
+      "title": "unihacks",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-16"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-15"
+    "hackathon": "2026-11-16"
   }
 }
