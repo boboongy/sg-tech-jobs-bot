@@ -78,10 +78,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-16"
+    },
+    "hackathon:https://redditgameofday2026.devpost.com/": {
+      "title": "Reddit’s Game of the Day Hackathon",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-17"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-16"
+    "hackathon": "2026-11-17"
   }
 }
