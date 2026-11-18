@@ -84,10 +84,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-17"
+    },
+    "hackathon:https://semester-sprint.devpost.com/": {
+      "title": "AI@UCF Semester Sprint",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-18"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-17"
+    "hackathon": "2026-11-18"
   }
 }
