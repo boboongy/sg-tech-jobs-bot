@@ -90,10 +90,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-18"
+    },
+    "hackathon:https://creators-ai-winter-challenge.devpost.com/": {
+      "title": "Creators AI Winter Challenge ",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-19"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-18"
+    "hackathon": "2026-11-19"
   }
 }
