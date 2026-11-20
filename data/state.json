@@ -96,10 +96,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-19"
+    },
+    "hackathon:https://pico-space-program.devpost.com/": {
+      "title": "Build with AI - Pico Space Program",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-20"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-19"
+    "hackathon": "2026-11-20"
   }
 }
