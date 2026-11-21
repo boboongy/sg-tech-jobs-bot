@@ -102,10 +102,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-20"
+    },
+    "hackathon:https://smbp-finhack.devpost.com/": {
+      "title": "SMBP FinHack",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-21"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-20"
+    "hackathon": "2026-11-21"
   }
 }
