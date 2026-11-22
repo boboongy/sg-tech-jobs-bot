@@ -108,10 +108,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-21"
+    },
+    "hackathon:https://glushkov-2026-gamedev-contest.devpost.com/": {
+      "title": "Glushkov 2026 GameDev Contest",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-22"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-21"
+    "hackathon": "2026-11-22"
   }
 }
