@@ -114,10 +114,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-22"
+    },
+    "hackathon:https://perceive-drawing-challenge.devpost.com/": {
+      "title": "Global Perceive Drawing Challenge  ",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-23"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-22"
+    "hackathon": "2026-11-23"
   }
 }
