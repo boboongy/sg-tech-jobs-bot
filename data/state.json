@@ -120,10 +120,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-23"
+    },
+    "https://www.mycareersfuture.gov.sg/job/information-technology/ai-developer-intern-tiao-man-a2dc2baf78c0f650223fee9f651de466": {
+      "title": "AI Developer Intern",
+      "type": "intern",
+      "date": "2026-11-24"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-23"
+    "hackathon": "2026-11-23",
+    "intern": "2026-11-24"
   }
 }
