@@ -125,11 +125,17 @@
       "title": "AI Developer Intern",
       "type": "intern",
       "date": "2026-11-24"
+    },
+    "hackathon:https://hackathon-draft-32215.devpost.com/": {
+      "title": "Acodemic X KeebsforWater Global SDG Hackathon",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-25"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-23",
+    "hackathon": "2026-11-25",
     "intern": "2026-11-24"
   }
 }
