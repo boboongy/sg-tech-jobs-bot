@@ -131,11 +131,16 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-25"
+    },
+    "https://www.mycareersfuture.gov.sg/job/information-technology/research-scientist-intern-muse-post-training-flywheel-facebook-singapore-6145d08b83447272e97b2a42f7aae024": {
+      "title": "Research Scientist Intern, Muse Post-Training & Flywheel (PhD)",
+      "type": "intern",
+      "date": "2026-11-26"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
     "hackathon": "2026-11-25",
-    "intern": "2026-11-24"
+    "intern": "2026-11-26"
   }
 }
