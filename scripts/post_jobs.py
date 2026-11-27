@@ -738,15 +738,13 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if raw_html is None:
             continue  # couldn't fetch - can't confirm a cash prize, so skip rather than guess
 
-        # Luma has no structured prize field at all - only post if the event's
-        # own page explicitly mentions a cash amount near "prize".
+        # Luma has no structured prize field at all. Best-effort search its
+        # own page for a cash mention; if none is found, show it as non-cash
+        # rather than skipping the post entirely (cash and non-cash both OK).
         code, amount = freeform_cash_prize(flattened)
-        if code is None:
-            print(f"hackathon: Luma match '{event.get('name')}' has no confirmed cash prize, skipping")
-            continue
+        prize_text = format_amount_sgd(code, amount) if code else "Non-cash / see event page"
 
         description = extract_meta_description(raw_html)
-        prize_text = format_amount_sgd(code, amount)
         caption = build_luma_caption(event, description=description, prize_text=prize_text)
         send_telegram_photo(event.get("cover_url") or logo_url_for({"name": event.get("name", "Hackathon")}), caption)
 
@@ -771,14 +769,9 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if not url or key in state["posted"]:
             continue
 
-        # Cash prizes only - prizes_counts.cash is Devpost's own authoritative
-        # count (more reliable than parsing the prize_amount HTML string,
-        # which we still use just to get the dollar figure to display).
-        if (h.get("prizes_counts") or {}).get("cash", 0) <= 0:
-            continue
-        code, amount = parse_prize_amount(h.get("prize_amount", ""))
-        if code is None or not amount:
-            continue
+        # Cash and non-cash prizes both allowed - build_hackathon_caption
+        # already shows "Non-cash / to be announced" via format_prize_sgd
+        # when there's no cash amount, so no gate needed here.
 
         # At least 2 weeks left to prepare/submit. Devpost gives no structured
         # deadline, only relative text ("4 days left") - skip (don't guess)
