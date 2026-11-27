@@ -15,7 +15,7 @@ import json
 import os
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import requests
@@ -301,6 +301,43 @@ def freeform_cash_prize(text: str) -> tuple:
         if amount > 0:
             return currency, amount
     return None, None
+
+
+MIN_DAYS_TO_DEADLINE = 14  # only post hackathons with at least 2 weeks left to prepare/submit
+
+# Devpost's API gives no structured deadline, only relative text like "4 days
+# left" or "about 2 months left" - parsed here into an approximate day count.
+TIME_LEFT_RE = re.compile(r"(?:about\s+)?(\d+)\s*(hour|day|week|month|year)s?\s+left", re.I)
+DAYS_PER_UNIT = {"hour": 1 / 24, "day": 1, "week": 7, "month": 30, "year": 365}
+
+
+def days_left_from_text(time_left_text: str) -> float | None:
+    """Approximate days remaining from Devpost's relative-time string.
+
+    Returns None - never a guess - for text it doesn't recognize (e.g. "Last
+    day to submit!", "Hackathon has ended"), so callers can treat an unparsed
+    deadline as not confidently meeting the 2-week bar rather than including
+    it by accident.
+    """
+    if not time_left_text:
+        return None
+    m = TIME_LEFT_RE.search(time_left_text)
+    if not m:
+        return None
+    number, unit = int(m.group(1)), m.group(2).lower()
+    return number * DAYS_PER_UNIT[unit]
+
+
+def days_until(iso_timestamp: str) -> float | None:
+    """Days from now until a UTC ISO timestamp (e.g. Luma's start_at). None on
+    any parse failure - never a guess."""
+    if not iso_timestamp:
+        return None
+    try:
+        target = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+        return (target - datetime.now(timezone.utc)).total_seconds() / 86400
+    except ValueError:
+        return None
 
 
 DEVPOST_PER_PAGE = 40  # confirmed server-side cap - a larger per_page is silently clamped to this
@@ -688,6 +725,14 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if not slug or key in state["posted"]:
             continue
 
+        # Luma events are typically a single live date rather than a
+        # submission window, so the "2 weeks to prepare" rule applies to the
+        # event's start date instead of a submission deadline. Skip (don't
+        # guess) if start_at is missing or unparseable.
+        days_left = days_until(event.get("start_at", ""))
+        if days_left is None or days_left < MIN_DAYS_TO_DEADLINE:
+            continue
+
         event_url = f"https://luma.com/{slug}"
         raw_html, flattened = fetch_hackathon_page(event_url)
         if raw_html is None:
@@ -726,10 +771,20 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if not url or key in state["posted"]:
             continue
 
-        # Cash prizes only - Devpost's structured field tells us this cheaply,
-        # before spending a page fetch on a hackathon we'd skip anyway.
+        # Cash prizes only - prizes_counts.cash is Devpost's own authoritative
+        # count (more reliable than parsing the prize_amount HTML string,
+        # which we still use just to get the dollar figure to display).
+        if (h.get("prizes_counts") or {}).get("cash", 0) <= 0:
+            continue
         code, amount = parse_prize_amount(h.get("prize_amount", ""))
         if code is None or not amount:
+            continue
+
+        # At least 2 weeks left to prepare/submit. Devpost gives no structured
+        # deadline, only relative text ("4 days left") - skip (don't guess)
+        # if that text isn't in a recognized format.
+        days_left = days_left_from_text(h.get("time_left_to_submission", ""))
+        if days_left is None or days_left < MIN_DAYS_TO_DEADLINE:
             continue
 
         raw_html, flattened = fetch_hackathon_page(url)
