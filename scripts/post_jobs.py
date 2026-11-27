@@ -183,8 +183,8 @@ def fetch_page_text(url: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def extract_team_size(hackathon_url: str) -> str | None:
-    """Best-effort team-size line from the hackathon's own overview page.
+def extract_team_size_from_text(text: str) -> str | None:
+    """Best-effort team-size line, given the hackathon page's already-flattened text.
 
     Searches the whole page rather than one heading, since the same fact
     shows up under different section names on different events ("Who can
@@ -192,14 +192,8 @@ def extract_team_size(hackathon_url: str) -> str | None:
     never a guess - if nothing confidently matches, so the caption just
     falls back to the rules link instead of showing something wrong.
     """
-    if not hackathon_url:
+    if not text:
         return None
-    try:
-        text = fetch_page_text(hackathon_url)
-    except requests.RequestException as e:
-        print(f"hackathon: team-size fetch failed for {hackathon_url}: {e}")
-        return None
-
     window = text[:6000]  # overview page content is near the top; bounds the regex cost
 
     for pattern in TEAM_SIZE_PATTERNS:
@@ -217,6 +211,96 @@ def extract_team_size(hackathon_url: str) -> str | None:
         return "Solo or team"
 
     return None
+
+
+def extract_team_size(hackathon_url: str) -> str | None:
+    """Convenience wrapper: fetch + extract in one call."""
+    if not hackathon_url:
+        return None
+    try:
+        text = fetch_page_text(hackathon_url)
+    except requests.RequestException as e:
+        print(f"hackathon: team-size fetch failed for {hackathon_url}: {e}")
+        return None
+    return extract_team_size_from_text(text)
+
+
+def fetch_hackathon_page(url: str) -> tuple:
+    """One fetch, two views: raw HTML (for <meta> tags) and flattened text (for
+    keyword/regex searches). Returns (None, None) on any failure so callers can
+    treat a fetch problem as "couldn't confirm" rather than crash the run.
+    """
+    if not url:
+        return None, None
+    try:
+        resp = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0 (compatible; sgtechjob-bot)"})
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        print(f"hackathon: page fetch failed for {url}: {e}")
+        return None, None
+
+    raw = resp.text
+    flattened = raw
+    for pattern, repl in CLEAN_STEPS:
+        flattened = pattern.sub(repl, flattened)
+    for entity, repl in ENTITY_MAP.items():
+        flattened = flattened.replace(entity, repl)
+    flattened = re.sub(r"\s+", " ", flattened)
+    return raw, flattened
+
+
+# Prefer the og:description meta tag (usually organizer-written for link
+# previews - the closest thing to a real "what's this about" blurb) and fall
+# back to the plain description tag. Each has two patterns since content=
+# and property=/name= can appear in either order in the tag.
+OG_DESC_RE = re.compile(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']', re.I)
+OG_DESC_RE_ALT = re.compile(r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']', re.I)
+NAME_DESC_RE = re.compile(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']', re.I)
+NAME_DESC_RE_ALT = re.compile(r'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']description["\']', re.I)
+
+
+def extract_meta_description(raw_html_text: str, limit: int = 220) -> str | None:
+    """Best-effort 'what's this about' blurb from the page's own meta tags."""
+    if not raw_html_text:
+        return None
+    for pattern in (OG_DESC_RE, OG_DESC_RE_ALT, NAME_DESC_RE, NAME_DESC_RE_ALT):
+        m = pattern.search(raw_html_text)
+        if m:
+            text = html.unescape(m.group(1))
+            text = re.sub(r"\s+", " ", text).strip()
+            if text:
+                return truncate_at_sentence(text, limit=limit)
+    return None
+
+
+# Luma events carry no structured prize field at all (unlike Devpost), so a
+# cash prize can only be confirmed by finding an explicit currency+number
+# mention near the word "prize" somewhere on the event's own page. No match
+# means no confirmed cash prize - the event gets skipped, per "cash prizes
+# only", rather than posted with a guessed or missing prize value.
+CURRENCY_NUM_RE = re.compile(r"(?P<currency>SGD|USD|S\$|US\$|\$|₹|€|£)\s*(?P<number>[\d,]+(?:\.\d+)?)", re.I)
+
+
+def freeform_cash_prize(text: str) -> tuple:
+    """Searches free text for a currency amount near the word "prize". Returns
+    (currency_code, amount) or (None, None) if nothing confidently matches.
+    """
+    if not text:
+        return None, None
+    for m in re.finditer(r"priz", text, re.I):
+        start, end = max(0, m.start() - 80), min(len(text), m.end() + 80)
+        cm = CURRENCY_NUM_RE.search(text[start:end])
+        if not cm:
+            continue
+        raw_currency = cm.group("currency").upper()
+        currency = {"S$": "SGD", "US$": "USD", "$": "USD"}.get(raw_currency, raw_currency)
+        try:
+            amount = float(cm.group("number").replace(",", ""))
+        except ValueError:
+            continue
+        if amount > 0:
+            return currency, amount
+    return None, None
 
 
 def devpost_search(challenge_type="online", status="open") -> list:
@@ -274,11 +358,10 @@ def format_luma_datetime(start_at: str, timezone_name: str) -> str:
         return start_at
 
 
-def build_luma_caption(event: dict) -> str:
+def build_luma_caption(event: dict, description: str | None = None, prize_text: str = "See event page") -> str:
     name = event.get("name", "")
     slug = event.get("url", "")
     event_url = f"https://luma.com/{slug}" if slug else ""
-    cover = event.get("cover_url", "")
     when = format_luma_datetime(event.get("start_at", ""), event.get("timezone", ""))
     location_type = event.get("location_type", "")
     geo = event.get("geo_address_info") or {}
@@ -287,16 +370,27 @@ def build_luma_caption(event: dict) -> str:
     else:
         where = ", ".join(filter(None, [geo.get("sublocality"), geo.get("city") or "Singapore"])) or "Singapore"
 
-    return (
-        f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
-        f"\U0001f4bb <b>{esc(name)}</b>\n\n"
-        f"\U0001f1f8\U0001f1ec <b>Local SG event</b> (via Luma)\n"
-        f"\U0001f4cd {esc(where)}\n"
-        f"\U0001f4c5 <b>When:</b> {esc(when)}\n\n"
-        f'\U0001f517 <a href="{esc(event_url)}">View &amp; register on Luma</a>\n\n'
-        f"#SGTechJobs #Hackathon #StudentFriendly\n"
-        f"{CHANNEL_PROMO_LINE}"
-    )
+    def render(desc_text: str) -> str:
+        about_line = f"\U0001f4dd {esc(desc_text)}\n\n" if desc_text else ""
+        return (
+            f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
+            f"\U0001f4bb <b>{esc(name)}</b>\n\n"
+            f"{about_line}"
+            f"\U0001f1f8\U0001f1ec <b>Local SG event</b> (via Luma)\n"
+            f"\U0001f4cd {esc(where)}\n"
+            f"\U0001f4c5 <b>When:</b> {esc(when)}\n"
+            f"\U0001f4b0 <b>Prize pool:</b> {esc(prize_text)}\n\n"
+            f'\U0001f517 <a href="{esc(event_url)}">View &amp; register on Luma</a>\n\n'
+            f"#SGTechJobs #Hackathon #StudentFriendly\n"
+            f"{CHANNEL_PROMO_LINE}"
+        )
+
+    for limit in (220, 150, 90, 40, 0):
+        desc_text = truncate_at_sentence(description, limit=limit) if (description and limit) else ""
+        caption = render(desc_text)
+        if len(caption) <= CAPTION_HARD_LIMIT:
+            return caption
+    return render("")
 
 
 def esc(value) -> str:
@@ -469,23 +563,26 @@ def convert_to_sgd(code: str, amount: float) -> float | None:
         return None
 
 
-def format_prize_sgd(raw: str) -> str:
-    """Converts Devpost's prize_amount field to a clean 'SGD X,XXX' string.
+def format_amount_sgd(code: str, amount: float) -> str:
+    """Formats a confirmed (currency_code, amount) pair as a clean 'SGD X,XXX' string.
 
-    Falls back to showing the original currency if conversion fails for any
-    reason (unknown code, FX API down, zero/no prize listed), so the post
-    never breaks or shows a blank field.
+    Falls back to showing the original currency if conversion fails (FX API
+    down, unrecognized code), so the post never breaks or shows a blank field.
     """
+    sgd_amount = convert_to_sgd(code, amount)
+    if sgd_amount is None:
+        return f"{code} {amount:,.0f} (SGD conversion unavailable)"
+    return f"SGD {sgd_amount:,.0f}"
+
+
+def format_prize_sgd(raw: str) -> str:
+    """Converts Devpost's prize_amount field to a clean 'SGD X,XXX' string."""
     code, amount = parse_prize_amount(raw)
     if code is None:
         return "See event page"
     if amount == 0:
         return "Non-cash / to be announced"
-    sgd_amount = convert_to_sgd(code, amount)
-    if sgd_amount is None:
-        # Couldn't get a live rate - show the original currency rather than guessing.
-        return f"{code} {amount:,.0f} (SGD conversion unavailable)"
-    return f"SGD {sgd_amount:,.0f}"
+    return format_amount_sgd(code, amount)
 
 
 PLACEHOLDER_THUMBNAIL_MARKERS = ("thumbnail-placeholder", "/assets/defaults/")
@@ -502,7 +599,7 @@ def hackathon_photo_url(hackathon: dict) -> str:
     return logo_url_for({"name": hackathon.get("organization_name") or hackathon.get("title", "Hackathon")})
 
 
-def build_hackathon_caption(hackathon: dict, team_size: str | None = None) -> str:
+def build_hackathon_caption(hackathon: dict, team_size: str | None = None, description: str | None = None) -> str:
     title = hackathon.get("title", "")
     org = hackathon.get("organization_name", "")
     location = (hackathon.get("displayed_location") or {}).get("location", "Online")
@@ -523,20 +620,30 @@ def build_hackathon_caption(hackathon: dict, team_size: str | None = None) -> st
     # link covers them instead.
     team_line = f"\U0001f465 <b>Team:</b> {esc(team_size)}\n" if team_size else ""
 
-    return (
-        f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
-        f"\U0001f4bb <b>{esc(title)}</b>\n\n"
-        f"\U0001f4a1 <b>Build around:</b> {themes}\n\n"
-        f"\U0001f3e2 <b>Organizer:</b> {esc(org)}\n"
-        f"\U0001f4cd {esc(location)}\n"
-        f"\U0001f4c5 <b>Submissions:</b> {esc(dates)} ({esc(time_left)})\n"
-        f"{team_line}"
-        f"\U0001f4b0 <b>Prize pool:</b> {esc(prize)}\n\n"
-        f'\U0001f4cb <a href="{esc(rules_url)}">Full rules (eligibility &amp; fees)</a>\n'
-        f'\U0001f517 <a href="{esc(url)}">Join on Devpost</a>\n\n'
-        f"#SGTechJobs #Hackathon #StudentFriendly\n"
-        f"{CHANNEL_PROMO_LINE}"
-    )
+    def render(desc_text: str) -> str:
+        about_line = f"\U0001f4dd {esc(desc_text)}\n\n" if desc_text else ""
+        return (
+            f"\U0001f3c6 <b>HACKATHON ALERT</b> \U0001f3c6\n\n"
+            f"\U0001f4bb <b>{esc(title)}</b>\n\n"
+            f"{about_line}"
+            f"\U0001f4a1 <b>Themes:</b> {themes}\n\n"
+            f"\U0001f3e2 <b>Organizer:</b> {esc(org)}\n"
+            f"\U0001f4cd {esc(location)}\n"
+            f"\U0001f4c5 <b>Submissions:</b> {esc(dates)} ({esc(time_left)})\n"
+            f"{team_line}"
+            f"\U0001f4b0 <b>Prize pool:</b> {esc(prize)}\n\n"
+            f'\U0001f4cb <a href="{esc(rules_url)}">Full rules (eligibility &amp; fees)</a>\n'
+            f'\U0001f517 <a href="{esc(url)}">Join on Devpost</a>\n\n'
+            f"#SGTechJobs #Hackathon #StudentFriendly\n"
+            f"{CHANNEL_PROMO_LINE}"
+        )
+
+    for limit in (220, 150, 90, 40, 0):
+        desc_text = truncate_at_sentence(description, limit=limit) if (description and limit) else ""
+        caption = render(desc_text)
+        if len(caption) <= CAPTION_HARD_LIMIT:
+            return caption
+    return render("")
 
 
 def run_hackathon_pick(state: dict, today: str) -> bool:
@@ -559,7 +666,21 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if not slug or key in state["posted"]:
             continue
 
-        caption = build_luma_caption(event)
+        event_url = f"https://luma.com/{slug}"
+        raw_html, flattened = fetch_hackathon_page(event_url)
+        if raw_html is None:
+            continue  # couldn't fetch - can't confirm a cash prize, so skip rather than guess
+
+        # Luma has no structured prize field at all - only post if the event's
+        # own page explicitly mentions a cash amount near "prize".
+        code, amount = freeform_cash_prize(flattened)
+        if code is None:
+            print(f"hackathon: Luma match '{event.get('name')}' has no confirmed cash prize, skipping")
+            continue
+
+        description = extract_meta_description(raw_html)
+        prize_text = format_amount_sgd(code, amount)
+        caption = build_luma_caption(event, description=description, prize_text=prize_text)
         send_telegram_photo(event.get("cover_url") or logo_url_for({"name": event.get("name", "Hackathon")}), caption)
 
         state["posted"][key] = {"title": event.get("name", ""), "type": "hackathon", "source": "luma", "date": today}
@@ -567,7 +688,7 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         print(f"hackathon: posted '{event.get('name')}' (via Luma)")
         return True
 
-    print("hackathon: no local Luma match today, falling back to Devpost")
+    print("hackathon: no local Luma match (with a confirmed cash prize) today, falling back to Devpost")
 
     try:
         results = devpost_search(challenge_type="online", status="open")
@@ -583,8 +704,17 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         if not url or key in state["posted"]:
             continue
 
-        team_size = extract_team_size(url)
-        caption = build_hackathon_caption(h, team_size=team_size)
+        # Cash prizes only - Devpost's structured field tells us this cheaply,
+        # before spending a page fetch on a hackathon we'd skip anyway.
+        code, amount = parse_prize_amount(h.get("prize_amount", ""))
+        if code is None or not amount:
+            continue
+
+        raw_html, flattened = fetch_hackathon_page(url)
+        team_size = extract_team_size_from_text(flattened) if flattened else None
+        description = extract_meta_description(raw_html) if raw_html else None
+
+        caption = build_hackathon_caption(h, team_size=team_size, description=description)
         send_telegram_photo(hackathon_photo_url(h), caption)
 
         state["posted"][key] = {"title": h.get("title", ""), "type": "hackathon", "source": "devpost", "date": today}
@@ -592,7 +722,7 @@ def run_hackathon_pick(state: dict, today: str) -> bool:
         print(f"hackathon: posted '{h.get('title')}' (via Devpost)")
         return True
 
-    print("hackathon: no open online hackathon found today")
+    print("hackathon: no open online hackathon with a confirmed cash prize found today")
     return False
 
 
