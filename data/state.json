@@ -136,11 +136,17 @@
       "title": "Research Scientist Intern, Muse Post-Training & Flywheel (PhD)",
       "type": "intern",
       "date": "2026-11-26"
+    },
+    "hackathon:https://cloud9.devpost.com/": {
+      "title": "Cloud9 x JetBrains: Sky's The Limit Hackathon 2026",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-27"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-25",
+    "hackathon": "2026-11-27",
     "intern": "2026-11-26"
   }
 }
