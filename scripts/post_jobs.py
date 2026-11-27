@@ -303,16 +303,38 @@ def freeform_cash_prize(text: str) -> tuple:
     return None, None
 
 
+DEVPOST_PER_PAGE = 40  # confirmed server-side cap - a larger per_page is silently clamped to this
+
+
 def devpost_search(challenge_type="online", status="open") -> list:
-    """Query Devpost's public hackathons API (no key needed)."""
-    params = {
-        "order_by": "recently-added",
-        "status[]": status,
-        "challenge_type[]": challenge_type,
-    }
-    resp = requests.get(DEVPOST_SEARCH_URL, params=params, timeout=TIMEOUT)
-    resp.raise_for_status()
-    return resp.json().get("hackathons", [])
+    """Query Devpost's public hackathons API (no key needed).
+
+    Without an explicit per_page, Devpost's default page is small (~9) and,
+    since the feed is sorted by recently-added, it shifts quickly as new
+    hackathons get submitted - meaning a run could see zero cash-prize
+    listings purely because the handful it happened to fetch that moment
+    were all $0, even while plenty of paid ones exist a page further in
+    (confirmed: a hackathon with a confirmed $50,000 prize was missing
+    from the ~9-item default page just minutes after being live). Pulling
+    both pages at 40/page covers the full open+online list (seen as high
+    as ~55 total) instead of a volatile small slice of it.
+    """
+    all_hackathons = []
+    for page in (1, 2):
+        params = {
+            "order_by": "recently-added",
+            "status[]": status,
+            "challenge_type[]": challenge_type,
+            "per_page": DEVPOST_PER_PAGE,
+            "page": page,
+        }
+        resp = requests.get(DEVPOST_SEARCH_URL, params=params, timeout=TIMEOUT)
+        resp.raise_for_status()
+        batch = resp.json().get("hackathons", [])
+        all_hackathons.extend(batch)
+        if len(batch) < DEVPOST_PER_PAGE:
+            break  # fewer than a full page means there's no page after this one
+    return all_hackathons
 
 
 # Luma has no public search API and its city-discovery page ignores keyword
