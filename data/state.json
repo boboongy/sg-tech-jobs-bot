@@ -142,11 +142,17 @@
       "type": "hackathon",
       "source": "devpost",
       "date": "2026-11-27"
+    },
+    "hackathon:https://cognizant-agenticweb.devpost.com/": {
+      "title": "Open Agentic Web Challenge",
+      "type": "hackathon",
+      "source": "devpost",
+      "date": "2026-11-28"
     }
   },
   "daily_lock": {
     "main": "2026-11-13",
-    "hackathon": "2026-11-27",
+    "hackathon": "2026-11-28",
     "intern": "2026-11-26"
   }
 }
